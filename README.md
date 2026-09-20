@@ -72,12 +72,14 @@ Measured on a 20-case sample of `deepset/prompt-injections`: precision 1.00, rec
 
 Screens a message with a battery of typed questions in one call:
 
-- **Safety hazards:** jailbreak attempts, requests for help with harm/illegal activity,
-  self-harm signals, medical-advice overreach (and, on the output side, whether the
-  reply actually broke policy).
-- **Security hazards:** prompt injection (hidden instructions aimed at an AI/agent
-  rather than a human), secrets/credential exfiltration, requests for malware or
-  exploit code without a stated authorization context.
+- **Safety:** jailbreak (including persona/fictional-frame workarounds), harmful or
+  illegal requests, self-harm signals, medical-advice overreach, `hate_harassment`,
+  `sexual_minors`.
+- **Security:** prompt injection, secrets/credential exfiltration, `exfiltration_setup`
+  and `exfiltration_channel` (outbound URLs carrying user data), `malicious_url`,
+  `sensitive_data`, unauthorized malware/exploit requests.
+- **Cross-turn:** `staged_attack`, `context_poisoning`, `escalation` — only via
+  `guard_conversation()`.
 - **Severity:** a `Score` question rating how much harm compliance would do, which can
   escalate a `review` into a `block`.
 
@@ -102,6 +104,9 @@ Get a key from your [OpenRouter dashboard](https://openrouter.ai/keys).
 python cli.py                      # screen every sample prompt/reply, strict policy
 python cli.py --policy permissive  # same messages, looser thresholds
 python cli.py --show dan           # full hazard breakdown for one message
+python cli.py --conversations      # multi-turn staged-attack screening
+python ablation.py                 # what de-obfuscation is worth, raw vs normalized
+pytest tests/                      # offline detector tests, no API key needed
 ```
 
 ## Use it in your own code
@@ -150,6 +155,17 @@ so keep it modest while iterating. Results are cached in `bench_cache.json` (git
 keyed by model + input, so re-running after only changing `policy.py` thresholds is free;
 delete that file (or edit `hazards.py`) to force fresh calls.
 
-Known gap this benchmark surfaced: Jev is English-primary (per TypeSafe's own docs) and
-misses persona/roleplay-framed jailbreaks that don't literally ask the model to "ignore
-instructions" — see `hazards.py`'s `jailbreak` criteria if you need to broaden that.
+### Known gaps
+
+- **Non-English recall.** Jev is English-primary per TypeSafe's docs, and German-language
+  injections were the residual misses in benchmarking. If you expect multilingual
+  traffic, measure it before trusting these thresholds.
+- **Obfuscation normalization adds less than expected.** `ablation.py` measures it: Jev
+  already scores homoglyph and base64 payloads at 0.99 raw, so normalization only moved
+  Unicode tag smuggling (+0.09). The detectors earn their place on exfiltration channels
+  and secrets, and as a deterministic floor — not by rescuing a weak classifier.
+- **No URL reputation.** Structural heuristics only; a freshly-registered malicious
+  domain with an ordinary TLD looks clean until the semantic pass catches the context.
+- **Benchmarks are a floor, not a ceiling.** Per
+  [HiddenLayer's analysis](https://hiddenlayer.com/innovation-hub/evaluating-prompt-injection-datasets/),
+  public datasets have noisy benign labels and don't transfer to domain-specific traffic.
