@@ -41,9 +41,11 @@ def run(client: JevClient, messages: dict[str, str], side: str, policy_name: str
         result = guard(client, text, side, policy_name)
         hazard, probability = top_hazard(result["nouls"])
         one_line = " ".join(text.split())
+        flags = ",".join(sorted({hit["name"] for hit in result["structural"]}))
+        evidence = f"[{flags}] " if flags else ""
         print(
             f"[{ICON[result['action']]}] {name:<20} {hazard}={probability:.2f} "
-            f"sev={result['severity']:.1f}  {one_line[:52]}"
+            f"sev={result['severity']:.1f}  {evidence}{one_line[:52]}"
         )
 
 
@@ -64,6 +66,12 @@ def show(client: JevClient, messages: dict[str, str], side: str, name: str, poli
         bar = "#" * round(probability * 24)
         print(f"    {hazard:<22}{probability:.2f}  {bar}".rstrip())
     print(f"    {'severity':<22}{result['severity']:.2f}  (0-3 scale)")
+    if result["structural"]:
+        print("  structural detectors:")
+        for hit in result["structural"]:
+            print(f"    {hit['name']:<22}{hit['detail']}")
+    if result["normalized"]:
+        print(f"  normalized to: {' '.join(result['normalized'].split())[:200]}")
 
 
 def main() -> None:

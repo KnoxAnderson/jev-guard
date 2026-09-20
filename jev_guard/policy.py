@@ -11,11 +11,28 @@ HAZARD_ACTION = {
     "prompt_injection": "block",
     "secrets_exfiltration": "block",
     "leaked_secrets": "block",
+    "exfiltration_setup": "block",
+    "exfiltration_channel": "block",
+    "sensitive_data": "review",
     "malicious_code": "review",
     "provided_exploit": "review",
     "medical_advice": "review",
     "self_harm": "support",
 }
+
+# Structural detector hits carry their own action, independent of any probability.
+# These fire on syntax, so an attacker cannot argue the model out of them — which is
+# the point: they cover exactly the obfuscation and exfil-channel cases that evade
+# intent classifiers.
+STRUCTURAL_ACTION = {
+    "invisible_unicode": "block",  # no legitimate message hides text from the reader
+    "encoded_payload": "block",  # base64 that decodes to instructions is never incidental
+    "exfiltration_channel": "block",
+    "homoglyphs": "review",  # occasionally legitimate in multilingual text
+    "unicode_variants": "review",
+    "sensitive_data": "review",
+}
+
 PRECEDENCE = ["support", "block", "review", "pass"]  # highest precedence wins
 
 POLICIES: dict[str, dict[str, float]] = {
@@ -25,8 +42,13 @@ POLICIES: dict[str, dict[str, float]] = {
 DEFAULT_POLICY = "strict"
 
 
-def route(nouls: dict[str, float], severity: float, policy: dict[str, float]) -> str:
-    """Turn one message's hazard assessment into one policy-specific action."""
+def route(
+    nouls: dict[str, float],
+    severity: float,
+    policy: dict[str, float],
+    structural: list[dict[str, Any]] | None = None,
+) -> str:
+    """Turn one message's assessment into one policy-specific action."""
     triggered = []
     for hazard, probability in nouls.items():
         if probability >= policy["action_threshold"]:
@@ -35,4 +57,8 @@ def route(nouls: dict[str, float], severity: float, policy: dict[str, float]) ->
             triggered.append("review")
     if severity >= policy["severity_block"]:
         triggered = ["block" if action == "review" else action for action in triggered]
+    # Structural hits are added after the severity rewrite so they keep their own
+    # action regardless of how harmless the model judged the message to be.
+    for hit in structural or []:
+        triggered.append(STRUCTURAL_ACTION.get(hit["name"], "review"))
     return next((action for action in PRECEDENCE if action in triggered), "pass")
