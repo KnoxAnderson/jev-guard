@@ -21,6 +21,7 @@ from jev_guard import DEFAULT_POLICY, POLICIES, JevClient, route, screen
 from jev_guard.bench.cache import ScreenCache
 from jev_guard.bench.datasets import LOADERS
 from jev_guard.bench.metrics import ConfusionMatrix, threshold_sweep
+from jev_guard.hazards import BATTERIES
 
 
 def main() -> None:
@@ -46,7 +47,9 @@ def main() -> None:
         cm = ConfusionMatrix()
         scored: list[tuple[float, int]] = []
         for case in cases:
-            key = {"model": client.model, "side": case.side, "state": case.state}
+            # Battery is part of the key so editing hazards.py invalidates stale cache
+            # entries instead of silently reusing noul scores from the old wording.
+            key = {"model": client.model, "side": case.side, "state": case.state, "battery": BATTERIES[case.side]}
             result = cache.get_or_compute(key, lambda case=case: screen(client, case.state, case.side))
             score = max(result["nouls"].values())
             action = route(result["nouls"], result["severity"], policy)
