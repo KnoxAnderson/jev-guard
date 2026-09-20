@@ -5,6 +5,7 @@ Usage:
     python cli.py                 # run every sample under the default policy
     python cli.py --policy permissive
     python cli.py --show dan      # print the full hazard breakdown for one message id
+    python cli.py --show dosage_request --side output   # disambiguate an id used on both sides
 """
 
 import argparse
@@ -70,6 +71,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default=DEFAULT_POLICY, choices=POLICIES.keys())
     parser.add_argument("--show", help="print the full breakdown for one message id (prompts or replies)")
+    parser.add_argument(
+        "--side",
+        choices=["input", "output"],
+        help="disambiguate --show when the id appears in both prompts.txt and replies.txt",
+    )
     args = parser.parse_args()
 
     if "OPENROUTER_API_KEY" not in os.environ:
@@ -81,12 +87,16 @@ def main() -> None:
     replies = load_messages(base / "replies.txt")
 
     if args.show:
-        if args.show in prompts:
+        in_prompts, in_replies = args.show in prompts, args.show in replies
+        if in_prompts and in_replies and not args.side:
+            sys.exit(f"{args.show!r} is in both prompts.txt and replies.txt — pass --side input or --side output")
+        side = args.side or ("input" if in_prompts else "output" if in_replies else None)
+        if side == "input" and in_prompts:
             show(client, prompts, "input", args.show, args.policy)
-        elif args.show in replies:
+        elif side == "output" and in_replies:
             show(client, replies, "output", args.show, args.policy)
         else:
-            sys.exit(f"Unknown message id: {args.show}")
+            sys.exit(f"Unknown message id: {args.show}" + (f" (not found on side={side})" if side else ""))
         return
 
     print(f"POLICY: {args.policy}\n")
