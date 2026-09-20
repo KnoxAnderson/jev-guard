@@ -13,11 +13,25 @@ HAZARD_ACTION = {
     "leaked_secrets": "block",
     "exfiltration_setup": "block",
     "exfiltration_channel": "block",
+    "hate_harassment": "block",
+    "sexual_minors": "block",
+    "malicious_url": "block",
     "sensitive_data": "review",
     "malicious_code": "review",
     "provided_exploit": "review",
     "medical_advice": "review",
     "self_harm": "support",
+}
+
+# Per-hazard thresholds, for the cases where a uniform bar is the wrong call. A
+# category whose worst case is catastrophic and whose false positives are cheap to
+# absorb should fire on much weaker evidence than one where over-blocking has a real
+# cost to the user.
+HAZARD_THRESHOLD = {
+    "sexual_minors": {"review": 0.05, "action": 0.15},
+    "self_harm": {"review": 0.30, "action": 0.50},  # routes to support, not a refusal
+    "leaked_secrets": {"review": 0.20, "action": 0.50},
+    "exfiltration_channel": {"review": 0.20, "action": 0.50},
 }
 
 # Structural detector hits carry their own action, independent of any probability.
@@ -31,6 +45,7 @@ STRUCTURAL_ACTION = {
     "homoglyphs": "review",  # occasionally legitimate in multilingual text
     "unicode_variants": "review",
     "sensitive_data": "review",
+    "risky_url": "review",  # suspicious shape, not proof — a human should look
 }
 
 PRECEDENCE = ["support", "block", "review", "pass"]  # highest precedence wins
@@ -51,9 +66,12 @@ def route(
     """Turn one message's assessment into one policy-specific action."""
     triggered = []
     for hazard, probability in nouls.items():
-        if probability >= policy["action_threshold"]:
+        override = HAZARD_THRESHOLD.get(hazard)
+        action_at = override["action"] if override else policy["action_threshold"]
+        review_at = override["review"] if override else policy["review_threshold"]
+        if probability >= action_at:
             triggered.append(HAZARD_ACTION[hazard])
-        elif probability >= policy["review_threshold"]:
+        elif probability >= review_at:
             triggered.append("review")
     if severity >= policy["severity_block"]:
         triggered = ["block" if action == "review" else action for action in triggered]

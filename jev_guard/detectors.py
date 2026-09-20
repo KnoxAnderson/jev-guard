@@ -66,8 +66,19 @@ CARD_CANDIDATE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 MD_IMAGE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
 MD_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(\s*([^)\s]+)")
 HTML_SRC = re.compile(r"<(?:img|script|iframe)[^>]*\b(?:src|href)\s*=\s*[\"']([^\"']+)", re.I)
-BARE_URL = re.compile(r"https?://[^\s<>\"')\]]+")
+BARE_URL = re.compile(r"(?:https?|data|javascript|file|ftp)://?[^\s<>\"')\]]+", re.I)
 RAW_IP_HOST = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+# Link-shortening services hide the real destination, so the address itself carries no
+# evidence either way — worth a look rather than a block.
+SHORTENERS = {
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "ow.ly", "buff.ly",
+    "rebrand.ly", "cutt.ly", "shorturl.at", "rb.gy", "t.ly", "shorte.st",
+}
+# TLDs with a high abuse-to-legitimate ratio; .zip and .mov collide with filenames,
+# which is what makes them useful for disguising a link as an attachment.
+RISKY_TLDS = {"zip", "mov", "tk", "ml", "ga", "cf", "gq"}
+URL_CREDENTIALS = re.compile(r"https?://[^/\s:@]+:[^/\s@]+@", re.I)
 
 
 @dataclass
@@ -201,6 +212,34 @@ def find_exfiltration_channels(text: str) -> list[DetectorHit]:
     return hits
 
 
+def find_risky_urls(text: str) -> list[DetectorHit]:
+    """Addresses that are suspicious on their face, independent of surrounding intent.
+
+    This is the structural half of what a threat-intelligence lookup does: no feed can
+    tell you a domain is bad before it is reported, but punycode homographs, embedded
+    credentials, and filename-colliding TLDs are attacker-shaped regardless of whether
+    the domain has been seen before.
+    """
+    hits = []
+    if URL_CREDENTIALS.search(text):
+        hits.append(DetectorHit("risky_url", "credentials embedded in URL"))
+    for url in BARE_URL.findall(text):
+        scheme = url.split(":", 1)[0].lower()
+        if scheme in ("data", "javascript", "file"):
+            hits.append(DetectorHit("risky_url", f"{scheme}: URI"))
+            continue
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            continue
+        if host.startswith("xn--") or ".xn--" in host:
+            hits.append(DetectorHit("risky_url", f"punycode/IDN homograph domain {host}"))
+        if host in SHORTENERS:
+            hits.append(DetectorHit("risky_url", f"link shortener {host} hides destination"))
+        if host.rsplit(".", 1)[-1] in RISKY_TLDS:
+            hits.append(DetectorHit("risky_url", f"high-abuse TLD .{host.rsplit('.', 1)[-1]}"))
+    return hits
+
+
 def scan(text: str) -> tuple[str, list[DetectorHit]]:
     """Normalize `text` and return it alongside every structural hit found.
 
@@ -210,4 +249,5 @@ def scan(text: str) -> tuple[str, list[DetectorHit]]:
     normalized, hits = normalize(text)
     hits += find_secrets(normalized)
     hits += find_exfiltration_channels(normalized)
+    hits += find_risky_urls(normalized)
     return normalized, hits

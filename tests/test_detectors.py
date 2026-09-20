@@ -83,3 +83,28 @@ def test_clean_text_produces_no_hits():
     text, hits = detectors.scan("Can you give me a good recipe for banana bread?")
     assert hits == []
     assert text == "Can you give me a good recipe for banana bread?"
+
+
+def test_punycode_domain_flagged():
+    assert "risky_url" in names(detectors.find_risky_urls("visit https://xn--pple-43d.com/login"))
+
+
+def test_url_embedded_credentials_flagged():
+    assert "risky_url" in names(detectors.find_risky_urls("https://admin:hunter2@internal.example/panel"))
+
+
+def test_shortener_flagged():
+    assert "risky_url" in names(detectors.find_risky_urls("click https://bit.ly/3xYzAbC now"))
+
+
+def test_risky_tld_flagged():
+    assert "risky_url" in names(detectors.find_risky_urls("download https://invoice-march.zip/file"))
+
+
+def test_javascript_uri_flagged():
+    assert "risky_url" in names(detectors.find_risky_urls("javascript://alert(document.cookie)"))
+
+
+def test_ordinary_urls_not_flagged():
+    assert detectors.find_risky_urls("see https://docs.python.org/3/library/re.html for details") == []
+    assert detectors.find_risky_urls("https://github.com/anthropics/claude-code/issues/42") == []

@@ -3,6 +3,49 @@
 A safety-and-security guardrail classifier built on TypeSafe's Jev model, called
 through OpenRouter's Decisions API (`~typesafe/jev-latest`).
 
+## How it works
+
+Every message goes through two independent passes, and either can escalate on its
+own — so an attack has to evade both:
+
+1. **Structural** (`jev_guard/detectors.py`) — deterministic, regex/parser-level. It
+   de-obfuscates the message *before* the semantic pass (Unicode tag smuggling,
+   zero-width characters, Cyrillic/Greek homoglyphs, NFKC variants, base64 payloads
+   that decode to instructions) and flags things that are attacker-shaped regardless
+   of intent: exfiltration channels, credentials/PII, and risky URLs.
+2. **Semantic** (Jev) — calibrated probabilities for intent-level hazards no regex can
+   express, evaluated in a single API call.
+
+The split matters because each pass covers the other's blind spot. Character-level
+obfuscation evades ML classifiers while the target LLM still reads the payload fine
+([arXiv:2504.11168](https://arxiv.org/pdf/2504.11168)); conversely, the dominant
+real-world exfiltration vector — a markdown image whose URL carries stolen data in a
+query parameter, auto-fetched by the chat UI with no user interaction — is *syntax*,
+and an intent classifier reads straight past it.
+
+### Compared to Google Cloud Model Armor
+
+| Capability | Model Armor | jev-guard |
+|---|---|---|
+| Prompt injection / jailbreak | ML classifier | Semantic + structural, de-obfuscated input |
+| Sensitive data | Cloud DLP integration | Regex + Luhn-checked cards, keys, JWTs, SSNs |
+| Malicious URLs | Threat-intel lookup | Structural heuristics (punycode, embedded creds, shorteners, high-abuse TLDs) + semantic |
+| RAI categories | Built-in filters | `hate_harassment`, `sexual_minors` hazards |
+| Exfiltration channels | — | Markdown/HTML image + link URL analysis |
+| Obfuscation normalization | — | Unicode tags, zero-width, homoglyphs, base64 |
+| Per-hazard thresholds | Per-category confidence | Per-hazard, tunable in `policy.py` |
+| Decision logic | Managed service | Yours, in readable code |
+
+Model Armor wins on threat-intel URL reputation (no local heuristic replaces a live
+feed) and multimodal screening (Jev is text-only). jev-guard wins on exfiltration-channel
+detection, obfuscation normalization, and the fact that every threshold and routing
+decision is code you own rather than a managed policy.
+
+Measured on a 20-case sample of `deepset/prompt-injections`: precision 1.00, recall
+0.83, F1 0.91, FPR 0.00.
+
+## Hazards
+
 Screens a message with a battery of typed questions in one call:
 
 - **Safety hazards:** jailbreak attempts, requests for help with harm/illegal activity,
