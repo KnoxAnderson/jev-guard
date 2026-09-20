@@ -6,9 +6,11 @@ Usage:
     python cli.py --policy permissive
     python cli.py --show dan      # print the full hazard breakdown for one message id
     python cli.py --show dosage_request --side output   # disambiguate an id used on both sides
+    python cli.py --conversations # screen multi-turn conversations for staged attacks
 """
 
 import argparse
+import json
 import os
 import sys
 import textwrap
@@ -16,7 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from jev_guard import DEFAULT_POLICY, POLICIES, JevClient, guard, route, screen
+from jev_guard import DEFAULT_POLICY, POLICIES, JevClient, guard, guard_conversation, route, screen
 
 ICON = {"pass": "  pass  ", "review": " review ", "block": " BLOCK  ", "support": "support "}
 
@@ -80,6 +82,11 @@ def main() -> None:
     parser.add_argument("--policy", default=DEFAULT_POLICY, choices=POLICIES.keys())
     parser.add_argument("--show", help="print the full breakdown for one message id (prompts or replies)")
     parser.add_argument(
+        "--conversations",
+        action="store_true",
+        help="screen samples/conversations.json for multi-turn attacks instead of single messages",
+    )
+    parser.add_argument(
         "--side",
         choices=["input", "output"],
         help="disambiguate --show when the id appears in both prompts.txt and replies.txt",
@@ -91,6 +98,19 @@ def main() -> None:
 
     client = JevClient()
     base = Path(__file__).parent / "samples"
+
+    if args.conversations:
+        print(f"POLICY: {args.policy}\n")
+        print("CONVERSATIONS (multi-turn)")
+        for name, turns in json.loads((base / "conversations.json").read_text()).items():
+            result = guard_conversation(client, turns, args.policy)
+            hazard, probability = top_hazard(result["nouls"])
+            print(
+                f"[{ICON[result['action']]}] {name:<24} {hazard}={probability:.2f} "
+                f"sev={result['severity']:.1f}  ({len(turns)} turns)"
+            )
+        return
+
     prompts = load_messages(base / "prompts.txt")
     replies = load_messages(base / "replies.txt")
 

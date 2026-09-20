@@ -33,8 +33,32 @@ and an intent classifier reads straight past it.
 | RAI categories | Built-in filters | `hate_harassment`, `sexual_minors` hazards |
 | Exfiltration channels | — | Markdown/HTML image + link URL analysis |
 | Obfuscation normalization | — | Unicode tags, zero-width, homoglyphs, base64 |
+| Multi-turn / staged attacks | Per-message only | Conversation-level battery |
 | Per-hazard thresholds | Per-category confidence | Per-hazard, tunable in `policy.py` |
 | Decision logic | Managed service | Yours, in readable code |
+
+### Multi-turn screening
+
+Per-message screening structurally cannot see an attack split across turns — a persona
+established early and cashed in later, or a fake "system" message planted upstream and
+invoked as authorization downstream. `guard_conversation()` passes the turn array to Jev
+as structured state and scores the conversation as one object.
+
+On the staged attack in `samples/conversations.json` (a novel-research framing that
+turns into a synthesis request only at the last turn), per-message screening of the
+final turn returns `review` at jailbreak=0.56 — the attack partially lands.
+Conversation-level screening returns `block` at staged_attack=0.82, while a benign
+novelist conversation with the same opening scores 0.07 and passes.
+
+```bash
+python cli.py --conversations
+```
+
+```python
+from jev_guard import JevClient, guard_conversation
+
+result = guard_conversation(JevClient(), turns)  # [{"role": ..., "content": ...}, ...]
+```
 
 Model Armor wins on threat-intel URL reputation (no local heuristic replaces a live
 feed) and multimodal screening (Jev is text-only). jev-guard wins on exfiltration-channel

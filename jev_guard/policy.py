@@ -21,6 +21,9 @@ HAZARD_ACTION = {
     "provided_exploit": "review",
     "medical_advice": "review",
     "self_harm": "support",
+    "staged_attack": "block",
+    "context_poisoning": "block",
+    "escalation": "review",
 }
 
 # Per-hazard thresholds, for the cases where a uniform bar is the wrong call. A

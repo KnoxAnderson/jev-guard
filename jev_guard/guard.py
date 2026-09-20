@@ -18,7 +18,7 @@ from .client import JevClient
 from .hazards import BATTERIES
 from .policy import DEFAULT_POLICY, POLICIES, route
 
-Side = Literal["input", "output"]
+Side = Literal["input", "output", "conversation"]
 
 
 def screen(client: JevClient, text: str, side: Side) -> dict[str, Any]:
@@ -48,3 +48,32 @@ def guard(client: JevClient, text: str, side: Side, policy_name: str = DEFAULT_P
         structural=result["structural"],
     )
     return {"action": action, **result}
+
+
+def guard_conversation(
+    client: JevClient,
+    turns: list[dict[str, str]],
+    policy_name: str = DEFAULT_POLICY,
+) -> dict[str, Any]:
+    """Screen a whole conversation for attacks that no single turn reveals.
+
+    Per-message screening cannot see an attack split across turns — a persona
+    established early and cashed in later, a fake 'system' message planted upstream,
+    or a refused request reintroduced in slices. Jev takes the turn array as
+    structured state and scores the conversation as one object.
+
+    `turns` is a list of {"role": ..., "content": ...} in order.
+    """
+    normalized_turns = []
+    structural: list[dict[str, str]] = []
+    for turn in turns:
+        normalized, hits = detectors.scan(turn["content"])
+        normalized_turns.append({**turn, "content": normalized})
+        structural += [{"name": hit.name, "detail": f"turn {len(normalized_turns)}: {hit.detail}"} for hit in hits]
+
+    battery = BATTERIES["conversation"]
+    answers = client.ask(state=normalized_turns, questions=battery)
+    nouls = {qid: answers[qid]["noul"] for qid in battery if qid != "severity"}
+    severity = answers["severity"]["score"]
+    action = route(nouls, severity, POLICIES[policy_name], structural=structural)
+    return {"action": action, "nouls": nouls, "severity": severity, "structural": structural}
