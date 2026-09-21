@@ -44,13 +44,19 @@ def main() -> None:
     parser.add_argument("--policy", default=DEFAULT_POLICY, choices=POLICIES.keys())
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--json", help="also write results to this JSON file, for reporting")
+    parser.add_argument("--template", help="Model Armor template id (short name) to scan against")
     args = parser.parse_args()
 
     if "OPENROUTER_API_KEY" not in os.environ:
         sys.exit("Set OPENROUTER_API_KEY (see .env.example) before running this.")
 
     jev = JevClient()
-    armor = ModelArmorClient()
+    armor = ModelArmorClient(
+        template=(
+            f"projects/ma-claude/locations/us-central1/templates/{args.template}"
+            if args.template else ModelArmorClient.__init__.__defaults__[0]
+        )
+    )
     policy = POLICIES[args.policy]
     cache = ScreenCache(Path(__file__).parent / "compare_cache.json")
     results: dict[str, dict] = {}

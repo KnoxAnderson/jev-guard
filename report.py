@@ -7,6 +7,7 @@
 
 import json
 import sys
+from pathlib import Path
 from datetime import date
 
 from reportlab.lib import colors
@@ -89,7 +90,7 @@ def grid(data, widths, align_right=(), header=True, zebra=True):
     return t
 
 
-def build(results: dict, out_path: str) -> None:
+def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
     s = styles()
     doc = SimpleDocTemplate(
         out_path, pagesize=LETTER,
@@ -171,9 +172,9 @@ def build(results: dict, out_path: str) -> None:
         "piAndJailbreakFilterSettings.confidenceLevel</font> to MEDIUM_AND_ABOVE. A LOW_AND_ABOVE setting "
         "exists and would raise its recall at some cost in false positives. These numbers are not Model "
         "Armor's ceiling.",
-        "<b>Multi-language detection was not enabled.</b> The template carries an empty <font face='Courier' "
-        "size='8.5'>multiLanguageDetection</font> block. Several of the attacks Model Armor missed on deepset "
-        "are German, so part of that gap is configuration rather than capability.",
+        "<b>Model Armor's own filter version was STABLE, not LATEST.</b> The baseline template pins "
+        "<font face='Courier' size='8.5'>FILTER_VERSION_ALIAS_STABLE</font>. The permutation sweep below "
+        "re-runs it on LATEST.",
         "<b>SPML is structurally asymmetric.</b> Its rows pair a system prompt with a user prompt. Jev takes "
         "both as structured state; Model Armor's sanitizeUserPrompt API accepts only the user text, so it "
         "cannot see the policy being violated. That is a real capability difference, but it means the SPML "
@@ -230,6 +231,49 @@ def build(results: dict, out_path: str) -> None:
         story.append(Spacer(1, 2))
 
     # --- per dataset ---------------------------------------------------------
+    if sweep:
+        story.append(Paragraph("Was the gap just configuration?", s["H"]))
+        story.append(Paragraph(
+            "The first round ran Model Armor on one template, which left open the objection that its settings "
+            "rather than its detection explained the gap. To close that, six templates were provisioned "
+            "covering every permutation of the PI filter's own axes — confidence level (LOW_AND_ABOVE / "
+            "MEDIUM_AND_ABOVE / HIGH) crossed with multi-language detection on/off — all pinned to "
+            "<font face='Courier' size='8.5'>FILTER_VERSION_ALIAS_LATEST</font> and isolating the "
+            "prompt-injection filter (RAI, SDP and malicious-URI off) so the number measures PI detection "
+            "rather than any filter firing.", s["Body"]))
+
+        for ds, data in sweep.items():
+            rows = [["Configuration", "Precision", "Recall", "F1", "FPR"]]
+            j = data["jev"]
+            rows.append(["jev-guard (reference)", f"{j['precision']:.2f}", f"{j['recall']:.2f}",
+                         f"{j['f1']:.2f}", f"{j['fpr']:.2f}"])
+            for label, m in data["armor"].items():
+                rows.append([f"Model Armor {label}", f"{m['precision']:.2f}", f"{m['recall']:.2f}",
+                             f"{m['f1']:.2f}", f"{m['fpr']:.2f}"])
+            block = [Paragraph(f"{ds} — all PI permutations (n={data['n']})", s["H3"]), Spacer(1, 4),
+                     grid(rows, [2.0 * inch, 0.8 * inch, 0.66 * inch, 0.56 * inch, 0.56 * inch],
+                          align_right=(1, 2, 3, 4))]
+            style = [("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold")]
+            block[-1].setStyle(TableStyle(style))
+            block.append(Spacer(1, 10))
+            story.append(KeepTogether(block))
+
+        story.append(Paragraph("Two results, one of which corrects this report's earlier draft", s["H3"]))
+        story.append(Paragraph(
+            "<b>Confidence level behaves as documented but does not close the gap.</b> Recall rises "
+            "monotonically as the threshold loosens — on deepset 0.24 (HIGH) to 0.28 (MEDIUM) to 0.32 (LOW) "
+            "— with precision staying at 1.00 throughout. Even at its most sensitive setting Model Armor's "
+            "PI filter reaches 0.32 recall against jev-guard's 0.76 on the same cases. The gap is therefore "
+            "not a threshold artifact.", s["Body"]))
+        story.append(Paragraph(
+            "<b>Multi-language detection had no measurable effect, contrary to this report's first draft.</b> "
+            "Every confidence level scored identically with the flag on and off. A direct spot check on three "
+            "explicit German override instructions confirmed it: identical verdicts either way, and two of "
+            "the three went undetected even at LOW_AND_ABOVE with the flag enabled. The earlier claim that "
+            "configuration explained the German misses was wrong — on this evidence it is a capability gap "
+            "in the PI filter. The flag may well affect the RAI or SDP filters, which these isolated "
+            "templates switch off; it does not appear to affect prompt-injection detection.", s["Body"]))
+
     story.append(Paragraph("Per-dataset detail", s["H"]))
     for name, r in results.items():
         block = [Paragraph(name, s["H3"]),
@@ -262,5 +306,7 @@ def build(results: dict, out_path: str) -> None:
 if __name__ == "__main__":
     src = sys.argv[1] if len(sys.argv) > 1 else "results.json"
     dst = sys.argv[2] if len(sys.argv) > 2 else "jev-guard-evaluation.pdf"
-    build(json.loads(open(src).read()), dst)
+    sweep_path = Path(sys.argv[3] if len(sys.argv) > 3 else "sweep.json")
+    sweep = json.loads(sweep_path.read_text()) if sweep_path.exists() else None
+    build(json.loads(open(src).read()), dst, sweep)
     print(f"wrote {dst}")

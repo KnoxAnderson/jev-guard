@@ -5,3 +5,4 @@ __pycache__/
 bench_cache.json
 compare_cache.json
 results.json
+sweep.json
