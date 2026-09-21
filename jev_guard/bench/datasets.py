@@ -53,4 +53,39 @@ def load_bipia(n: int | None = None, seed: int = 0) -> list[EvalCase]:
     ]
 
 
-LOADERS = {"deepset": load_deepset, "bipia": load_bipia}
+
+
+def load_safeguard(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """Direct prompt injection, larger and more varied than deepset.
+    https://huggingface.co/datasets/xTRam1/safe-guard-prompt-injection (2,060 test rows)
+    """
+    ds = _split("xTRam1/safe-guard-prompt-injection", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [EvalCase(state=row["text"], side="input", label=row["label"], source="safeguard") for row in ds]
+
+
+def load_jailbreak(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """Jailbreak vs benign prompts, labeled by `type` rather than a 0/1 column.
+    https://huggingface.co/datasets/jackhhao/jailbreak-classification (262 test rows)
+    """
+    ds = _split("jackhhao/jailbreak-classification", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(
+            state=row["prompt"],
+            side="input",
+            label=1 if row["type"].strip().lower() == "jailbreak" else 0,
+            source="jailbreak",
+        )
+        for row in ds
+    ]
+
+
+LOADERS = {
+    "deepset": load_deepset,
+    "bipia": load_bipia,
+    "safeguard": load_safeguard,
+    "jailbreak": load_jailbreak,
+}

@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .venv/
 bench_cache.json
+compare_cache.json
