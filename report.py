@@ -293,12 +293,13 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
             "not a threshold artifact.", s["Body"]))
         story.append(Paragraph(
             "<b>Multi-language detection had no measurable effect, contrary to this report's first draft.</b> "
-            "Every confidence level scored identically with the flag on and off. A direct spot check on three "
-            "explicit German override instructions confirmed it: identical verdicts either way, and two of "
-            "the three went undetected even at LOW_AND_ABOVE with the flag enabled. The earlier claim that "
-            "configuration explained the German misses was wrong — on this evidence it is a capability gap "
-            "in the PI filter. The flag may well affect the RAI or SDP filters, which these isolated "
-            "templates switch off; it does not appear to affect prompt-injection detection.", s["Body"]))
+            "Across 416 cases the flag changed exactly one verdict (deepset at MEDIUM, 0.23 vs 0.22 recall — "
+            "a single case out of 60 attacks, which is noise). A direct spot check on three explicit German "
+            "override instructions gave identical results either way, and two of the three went undetected "
+            "even at LOW_AND_ABOVE with the flag enabled. The earlier claim that configuration explained the "
+            "German misses was wrong — on this evidence it is a capability gap in the PI filter. The flag "
+            "may well affect the RAI or SDP filters, which these isolated templates switch off; it does not "
+            "appear to affect prompt-injection detection.", s["Body"]))
 
     story.append(Paragraph("Per-dataset detail", s["H"]))
     for name, r in results.items():
