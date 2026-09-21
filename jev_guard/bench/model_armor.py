@@ -7,6 +7,9 @@ depends on this.
 
 from __future__ import annotations
 
+import random
+import time
+
 import google.auth
 import google.auth.transport.requests
 import requests
@@ -40,13 +43,22 @@ class ModelArmorClient:
             if side == "input"
             else {"modelResponseData": {"text": text}}
         )
-        response = requests.post(
-            f"{self._base}/{self.template}:{endpoint}",
-            headers={"Authorization": f"Bearer {self._token()}", "Content-Type": "application/json"},
-            json=body,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        for attempt in range(5):
+            try:
+                response = requests.post(
+                    f"{self._base}/{self.template}:{endpoint}",
+                    headers={"Authorization": f"Bearer {self._token()}", "Content-Type": "application/json"},
+                    json=body,
+                    timeout=self.timeout,
+                )
+                if response.status_code in (429, 500, 502, 503):
+                    raise requests.HTTPError(f"retryable {response.status_code}")
+                response.raise_for_status()
+                break
+            except (requests.Timeout, requests.ConnectionError, requests.HTTPError):
+                if attempt == 4:
+                    raise
+                time.sleep(min(2**attempt, 16) + random.random())
         sr = response.json().get("sanitizationResult", {})
 
         filters, confidence = [], None
