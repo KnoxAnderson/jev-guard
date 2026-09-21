@@ -14,6 +14,7 @@ Both systems' results are cached in compare_cache.json.
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ def main() -> None:
     parser.add_argument("--n", type=int, default=50, help="cases sampled per dataset")
     parser.add_argument("--policy", default=DEFAULT_POLICY, choices=POLICIES.keys())
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--json", help="also write results to this JSON file, for reporting")
     args = parser.parse_args()
 
     if "OPENROUTER_API_KEY" not in os.environ:
@@ -51,6 +53,7 @@ def main() -> None:
     armor = ModelArmorClient()
     policy = POLICIES[args.policy]
     cache = ScreenCache(Path(__file__).parent / "compare_cache.json")
+    results: dict[str, dict] = {}
 
     for name in args.datasets:
         cases = LOADERS[name](n=args.n, seed=args.seed)
@@ -69,8 +72,8 @@ def main() -> None:
                 route(jev_result["nouls"], jev_result["severity"], policy, jev_result.get("structural")) != "pass"
             )
 
-            armor_key = {"sys": "armor", "side": case.side, "state": case.state, "template": armor.template}
-            armor_result = cache.get_or_compute(armor_key, lambda: armor.scan(case.state, case.side))
+            armor_key = {"sys": "armor", "side": case.side, "state": case.for_armor(), "template": armor.template}
+            armor_result = cache.get_or_compute(armor_key, lambda: armor.scan(case.for_armor(), case.side))
             armor_flag = int(armor_result["flagged"])
 
             jev_cm.add(jev_flag, case.label)
@@ -88,6 +91,23 @@ def main() -> None:
                 elif not jev_flag and not armor_flag:
                     both_missed.append(excerpt)
 
+        def as_dict(cm):
+            return {"precision": cm.precision, "recall": cm.recall, "f1": cm.f1, "fpr": cm.fpr,
+                    "tp": cm.tp, "fp": cm.fp, "tn": cm.tn, "fn": cm.fn}
+
+        results[name] = {
+            "n": len(cases),
+            "attacks": jev_cm.tp + jev_cm.fn,
+            "jev": as_dict(jev_cm),
+            "armor": as_dict(armor_cm),
+            "union": as_dict(union_cm),
+            "intersection": as_dict(inter_cm),
+            "agreement": agree / len(cases),
+            "jev_only": jev_only,
+            "armor_only": armor_only,
+            "both_missed": both_missed,
+        }
+
         report("jev-guard", jev_cm)
         report("model-armor", armor_cm)
         report("union (either flags)", union_cm)
@@ -102,6 +122,10 @@ def main() -> None:
                              ("both missed", both_missed)):
             for excerpt in items[:3]:
                 print(f"    [{label}] {excerpt}")
+
+    if args.json:
+        Path(args.json).write_text(json.dumps(results, indent=2))
+        print(f"\nwrote {args.json}")
 
 
 if __name__ == "__main__":

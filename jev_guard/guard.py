@@ -21,9 +21,12 @@ from .policy import DEFAULT_POLICY, POLICIES, route
 Side = Literal["input", "output", "conversation"]
 
 
-def screen(client: JevClient, text: str, side: Side) -> dict[str, Any]:
-    """Run both passes over one message and return the raw assessment."""
-    normalized, structural = detectors.scan(text)
+def screen(client: JevClient, text: Any, side: Side) -> dict[str, Any]:
+    """Run both passes over one message and return the raw assessment.
+
+    `text` may be a plain string or structured state (dict/list); Jev accepts both.
+    """
+    normalized, structural = detectors.scan_any(text)
     battery = BATTERIES[side]
     answers = client.ask(state=normalized, questions=battery)
     return {

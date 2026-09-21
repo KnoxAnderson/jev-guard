@@ -22,6 +22,7 @@ import binascii
 import re
 import unicodedata
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 # --- character-level obfuscation ------------------------------------------------
@@ -238,6 +239,32 @@ def find_risky_urls(text: str) -> list[DetectorHit]:
         if host.rsplit(".", 1)[-1] in RISKY_TLDS:
             hits.append(DetectorHit("risky_url", f"high-abuse TLD .{host.rsplit('.', 1)[-1]}"))
     return hits
+
+
+def scan_any(state: Any) -> tuple[Any, list[DetectorHit]]:
+    """scan() for state that may be a string, dict, or list.
+
+    Jev takes structured state, so the guard has to as well: every string anywhere in
+    the structure gets normalized and scanned, and hits are labeled with the field
+    they came from. The shape is preserved so the question still sees the same object.
+    """
+    hits: list[DetectorHit] = []
+
+    def walk(node: Any, path: str = "") -> Any:
+        if isinstance(node, str):
+            normalized, node_hits = scan(node)
+            hits.extend(
+                DetectorHit(hit.name, f"{path}: {hit.detail}" if path else hit.detail)
+                for hit in node_hits
+            )
+            return normalized
+        if isinstance(node, dict):
+            return {k: walk(v, f"{path}.{k}" if path else str(k)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
+        return node
+
+    return walk(state), hits
 
 
 def scan(text: str) -> tuple[str, list[DetectorHit]]:
