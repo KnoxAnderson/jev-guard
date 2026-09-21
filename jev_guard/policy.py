@@ -56,8 +56,12 @@ PRECEDENCE = ["support", "block", "review", "pass"]  # highest precedence wins
 POLICIES: dict[str, dict[str, float]] = {
     "strict": {"review_threshold": 0.35, "action_threshold": 0.70, "severity_block": 2.0},
     "permissive": {"review_threshold": 0.35, "action_threshold": 0.85, "severity_block": 2.0},
+    # Tuned against 2,378 cached cases. Raising review_threshold is what actually moves
+    # the false-positive rate — action_threshold barely matters, because nearly all
+    # false positives sit in the review band rather than the action band.
+    "low_fp": {"review_threshold": 0.60, "action_threshold": 0.85, "severity_block": 2.5},
 }
-DEFAULT_POLICY = "strict"
+DEFAULT_POLICY = "low_fp"
 
 
 def route(
