@@ -125,10 +125,36 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         f"caught <b>{jev_only}</b> that Model Armor missed. The two systems' errors are therefore highly "
         f"correlated, and stacking them adds far less than the individual gap suggests.",
         s["Body"]))
+    worst = min(results.items(), key=lambda kv: kv[1]["jev"]["f1"] - kv[1]["armor"]["f1"])
+    high_fpr = sorted(results.items(), key=lambda kv: -kv[1]["jev"]["fpr"])[:2]
     story.append(Paragraph(
-        "Read the per-dataset numbers as directional rather than definitive: 50 cases per dataset puts the "
-        "margin of error on any single F1 at several points, and two configuration caveats below materially "
-        "favor jev-guard.", s["Body"]))
+        f"<b>That headline hides the finding that matters most.</b> jev-guard's margin depends heavily on how "
+        f"realistic each dataset's benign half is. Where the negatives are ordinary question-answering text "
+        f"they are trivially separable and jev-guard dominates. Where they are drawn from real prompt-sharing "
+        f"traffic or deliberately matched to the attacks, its precision collapses: on "
+        f"<b>{worst[0]}</b> Model Armor wins outright ({worst[1]['armor']['f1']:.2f} vs "
+        f"{worst[1]['jev']['f1']:.2f}), and jev-guard's worst false-positive rates are "
+        f"{high_fpr[0][0]} at {high_fpr[0][1]['jev']['fpr']:.2f} and {high_fpr[1][0]} at "
+        f"{high_fpr[1][1]['jev']['fpr']:.2f}, against Model Armor's "
+        f"{high_fpr[0][1]['armor']['fpr']:.2f} and {high_fpr[1][1]['armor']['fpr']:.2f}. A guard that flags a "
+        f"third of legitimate traffic is not deployable, whatever its recall.", s["Body"]))
+    story.append(Paragraph(
+        "Diagnosing those false positives found two definition errors rather than threshold problems. The "
+        "prompt-injection question asked whether a message contained instructions addressed to an AI — which "
+        "describes prompting itself, and flagged users setting a persona. Rewritten around provenance "
+        "(instructions arriving inside material the sender asked the assistant to process), its false "
+        "positives on jailbreakhub fell from 87 to 11. The harmful-request question did not distinguish "
+        "seeking capability from seeking understanding, and flagged questions about the history of bomb "
+        "technology and about regulatory loopholes. Both fixes are in the numbers reported here.", s["Body"]))
+    story.append(Paragraph(
+        "The residual jailbreakhub gap is partly a labelling disagreement rather than a detection failure: "
+        "much of its benign half consists of persona-override prompts (\u201cyou are now X, stay in character\u201d) "
+        "that many production guards would flag by design. It is reported as a loss regardless, because "
+        "picking the interpretation that flatters the system under test is how evaluations become "
+        "marketing.", s["Body"]))
+    story.append(Paragraph(
+        "Read the per-dataset numbers as directional rather than definitive, and note that the caveats below "
+        "materially favor jev-guard.", s["Body"]))
 
     head = ["Dataset", "n", "jev F1", "armor F1", "jev R", "armor R", "Agree", "jev-only", "armor-only"]
     rows = [head]
