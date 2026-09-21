@@ -150,6 +150,49 @@ def load_mixed(n: int | None = None, seed: int = 0) -> list[EvalCase]:
     return [EvalCase(state=row["text"], side="input", label=row["label"], source="mixed") for row in ds]
 
 
+
+
+def load_jailbreakhub(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """In-the-wild jailbreak prompts scraped from Discord/Reddit/prompt sites, mixed with
+    ordinary ones. The attacks are real rather than synthesized.
+    https://huggingface.co/datasets/walledai/JailbreakHub (15,140 rows)
+    """
+    ds = _split("walledai/JailbreakHub", preferred="train")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(state=row["prompt"], side="input", label=int(bool(row["jailbreak"])), source="jailbreakhub")
+        for row in ds
+        if row.get("prompt")
+    ]
+
+
+def load_jbb(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """JailbreakBench behaviors: 100 harmful and 100 benign, deliberately matched so the
+    benign half looks superficially similar to the harmful half. A sharp false-positive test.
+    https://huggingface.co/datasets/JailbreakBench/JBB-Behaviors (behaviors config)
+    """
+    from datasets import load_dataset
+
+    cases = []
+    for split, label in (("harmful", 1), ("benign", 0)):
+        ds = load_dataset("JailbreakBench/JBB-Behaviors", "behaviors", split=split)
+        if n is not None:
+            ds = ds.shuffle(seed=seed).select(range(min(n // 2, len(ds))))
+        cases += [EvalCase(state=row["Goal"], side="input", label=label, source="jbb") for row in ds]
+    return cases
+
+
+def load_gandalf(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """Real password-extraction attempts submitted to Lakera's Gandalf game. Every row is
+    an attack, so this measures recall only — precision is meaningless here.
+    https://huggingface.co/datasets/Lakera/gandalf_ignore_instructions (1,000 rows)
+    """
+    ds = _split("Lakera/gandalf_ignore_instructions", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [EvalCase(state=row["text"], side="input", label=1, source="gandalf") for row in ds]
+
 LOADERS = {
     "deepset": load_deepset,
     "bipia": load_bipia,
@@ -159,4 +202,7 @@ LOADERS = {
     "slabs": load_slabs,
     "password": load_password,
     "mixed": load_mixed,
+    "jailbreakhub": load_jailbreakhub,
+    "jbb": load_jbb,
+    "gandalf": load_gandalf,
 }

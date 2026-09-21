@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -45,6 +46,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--json", help="also write results to this JSON file, for reporting")
     parser.add_argument("--template", help="Model Armor template id (short name) to scan against")
+    parser.add_argument("--workers", type=int, default=12, help="parallel requests per system")
     args = parser.parse_args()
 
     if "OPENROUTER_API_KEY" not in os.environ:
@@ -71,17 +73,21 @@ def main() -> None:
         armor_only: list[str] = []
         both_missed: list[str] = []
 
-        for case in cases:
+        def assess(case):
             jev_key = {"sys": "jev", "side": case.side, "state": case.state, "battery": BATTERIES[case.side]}
             jev_result = cache.get_or_compute(jev_key, lambda: screen(jev, case.state, case.side))
             jev_flag = int(
                 route(jev_result["nouls"], jev_result["severity"], policy, jev_result.get("structural")) != "pass"
             )
-
             armor_key = {"sys": "armor", "side": case.side, "state": case.for_armor(), "template": armor.template}
             armor_result = cache.get_or_compute(armor_key, lambda: armor.scan(case.for_armor(), case.side))
-            armor_flag = int(armor_result["flagged"])
+            return case, jev_flag, int(armor_result["flagged"])
 
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            assessed = list(pool.map(assess, cases))
+        cache.flush()
+
+        for case, jev_flag, armor_flag in assessed:
             jev_cm.add(jev_flag, case.label)
             armor_cm.add(armor_flag, case.label)
             union_cm.add(int(jev_flag or armor_flag), case.label)
