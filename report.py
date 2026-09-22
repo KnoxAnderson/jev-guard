@@ -165,7 +165,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
         # Recall-only datasets have no negatives, so an FPR does not exist for them.
         return "—" if v != v else f"{v:.2f}"
 
-    head = ["Dataset", "n", "jev F1", "Model Armor F1", "jev R", "Model Armor R",
+    head = ["Dataset", "Type", "n", "jev F1", "Model Armor F1", "jev R", "Model Armor R",
             "jev FPR", "Model Armor FPR"]
     rows = [head]
     ordered = sorted(results.items(),
@@ -179,25 +179,25 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
             current = cat
     for name, r in ordered:
         rows.append([
-            name, str(r["n"]),
+            name, CATEGORY.get(name, "—"), str(r["n"]),
             f"{r['jev']['f1']:.2f}", f"{r['armor']['f1']:.2f}",
             f"{r['jev']['recall']:.2f}", f"{r['armor']['recall']:.2f}",
             pct(r["jev"]["fpr"]), pct(r["armor"]["fpr"]),
         ])
-    t = grid(rows, [0.95 * inch, 0.34 * inch, 0.56 * inch, 1.03 * inch, 0.5 * inch,
-                    0.98 * inch, 0.6 * inch, 1.08 * inch],
-             align_right=(1, 2, 3, 4, 5, 6, 7))
+    t = grid(rows, [0.92 * inch, 0.66 * inch, 0.3 * inch, 0.52 * inch, 0.98 * inch,
+                    0.47 * inch, 0.93 * inch, 0.56 * inch, 1.03 * inch],
+             align_right=(2, 3, 4, 5, 6, 7, 8))
     extra = []
     for i, cat in band_rows.items():
         extra.append(("LINEABOVE", (0, i), (-1, i), 0.9, MUTED))
     for i, (_, r) in enumerate(ordered, start=1):
         better = WIN if r["jev"]["f1"] > r["armor"]["f1"] + 0.005 else INK
-        extra.append(("TEXTCOLOR", (2, i), (2, i), better))
-        extra.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
+        extra.append(("TEXTCOLOR", (3, i), (3, i), better))
+        extra.append(("FONTNAME", (3, i), (3, i), "Helvetica-Bold"))
     t.setStyle(TableStyle(extra))
     story += [t, Spacer(1, 6),
-              Paragraph("Grouped by attack class: direct injection first, then jailbreak, then indirect "
-                        "(rules mark each boundary). R is recall; FPR is the false-positive rate, shown as "
+              Paragraph("Sorted by attack class — direct injection, then jailbreak, then indirect — with a "
+                        "rule at each boundary. R is recall; FPR is the false-positive rate, shown as "
                         "“—” for datasets that contain only attacks and therefore have no negatives to "
                         "measure it against. Green marks the higher F1.", s["Small"])]
 
