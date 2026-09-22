@@ -276,6 +276,90 @@ def load_boundary(n: int | None = None, seed: int = 0) -> list[EvalCase]:
         cases.append(EvalCase(state=r["text"], side="input", label=label, source="boundary"))
     return cases
 
+
+def load_llmail(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """INDIRECT. Microsoft's LLMail-Inject challenge: adaptive attacks submitted against
+    an LLM email assistant, where the payload rides in an email the assistant retrieves.
+    Every row is an attempt, so this measures recall only. The `objectives` field records
+    whether the attempt beat the challenge's own defenses.
+    https://huggingface.co/datasets/microsoft/llmail-inject-challenge (461k rows)
+    """
+    from datasets import load_dataset
+
+    ds = load_dataset("microsoft/llmail-inject-challenge", split="Phase1", streaming=True)
+    ds = ds.shuffle(seed=seed, buffer_size=10_000)
+    cases = []
+    for row in ds:
+        body = (row.get("body") or "").strip()
+        if not body:
+            continue
+        subject = (row.get("subject") or "").strip()
+        cases.append(
+            EvalCase(
+                state={
+                    "external_content": f"Subject: {subject}\n\n{body}",
+                    "user_request": "Summarize my recent emails.",
+                },
+                side="input",
+                label=1,
+                source="llmail",
+                armor_text=f"Summarize my recent emails.\n\nSubject: {subject}\n\n{body}",
+            )
+        )
+        if n is not None and len(cases) >= n:
+            break
+    return cases
+
+
+def load_b3(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """INDIRECT. Lakera's b3 agent-security benchmark: attacks aimed at deployed agent
+    apps, including markdown-link phishing and data-extraction payloads. All positive.
+    https://huggingface.co/datasets/Lakera/b3-agent-security-benchmark-weak (630 test)
+    """
+    ds = _split("Lakera/b3-agent-security-benchmark-weak", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(
+            state={"external_content": r["attack"], "user_request": f"Assist with {r.get('app_name', 'this app')}."},
+            side="input",
+            label=1,
+            source="b3",
+            armor_text=r["attack"],
+        )
+        for r in ds
+        if r.get("attack")
+    ]
+
+
+def load_mcp_poison(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """INDIRECT. Tool-description poisoning: each row carries a benign and a poisoned
+    description of the same MCP tool, so both classes come from matched pairs. Small but
+    it covers a vector nothing else here does — the injection lives in tool metadata the
+    agent reads, not in user text or retrieved documents.
+    https://huggingface.co/datasets/fevziegeyurtsevenler/mcp-tool-poisoning (25 pairs)
+    """
+    ds = _split("fevziegeyurtsevenler/mcp-tool-poisoning", preferred="train")
+    cases = []
+    for r in ds:
+        tool = r.get("tool_name", "tool")
+        for field, label in (("benign_description", 0), ("poisoned_description", 1)):
+            text = r.get(field)
+            if not text:
+                continue
+            cases.append(
+                EvalCase(
+                    state={"external_content": f"Tool `{tool}` description: {text}",
+                           "user_request": "Use the available tools to help me."},
+                    side="input",
+                    label=label,
+                    source="mcp_poison",
+                    armor_text=f"Tool `{tool}` description: {text}",
+                )
+            )
+    return cases[: n * 2] if n else cases
+
+
 # Retired from the default suite, kept loadable for reproducing older runs:
 #   password — 155 downloads; superseded by gandalf and mosscap, which are real
 #              extraction attempts from live games rather than a synthetic set.
@@ -301,6 +385,9 @@ LOADERS = {
     "chatgpt_jb": load_chatgpt_jb,
     "jailbreakv": load_jailbreakv,
     "boundary": load_boundary,
+    "llmail": load_llmail,
+    "b3": load_b3,
+    "mcp_poison": load_mcp_poison,
 }
 
 
@@ -312,7 +399,8 @@ CATEGORY = {
     "neuralchemy": "direct", "mosscap": "direct", "password": "direct", "spml": "direct",
     "jailbreak": "jailbreak", "jbb": "jailbreak", "jailbreakhub": "jailbreak",
     "chatgpt_jb": "jailbreak", "jailbreakv": "jailbreak", "gandalf": "jailbreak",
-    "bipia": "indirect", "boundary": "indirect",
+    "bipia": "indirect", "boundary": "indirect", "llmail": "indirect",
+    "b3": "indirect", "mcp_poison": "indirect",
 }
 
 
