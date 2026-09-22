@@ -1,0 +1,30 @@
+{
+  "template": "testing-template",
+  "project": "ma-claude / us-central1",
+  "pi_and_jailbreak": {
+    "filterEnforcement": "ENABLED",
+    "confidenceLevel": "MEDIUM_AND_ABOVE"
+  },
+  "rai": [
+    [
+      "HATE_SPEECH",
+      "MEDIUM_AND_ABOVE"
+    ],
+    [
+      "DANGEROUS",
+      "MEDIUM_AND_ABOVE"
+    ],
+    [
+      "SEXUALLY_EXPLICIT",
+      "MEDIUM_AND_ABOVE"
+    ],
+    [
+      "HARASSMENT",
+      "MEDIUM_AND_ABOVE"
+    ]
+  ],
+  "sdp": "ENABLED",
+  "malicious_uri": "ENABLED",
+  "multilang": false,
+  "filter_version": "FILTER_VERSION_ALIAS_STABLE"
+}

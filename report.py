@@ -96,7 +96,7 @@ def grid(data, widths, align_right=(), header=True, zebra=True):
     return t
 
 
-def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
+def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: dict | None = None) -> None:
     s = styles()
     doc = SimpleDocTemplate(
         out_path, pagesize=LETTER,
@@ -296,12 +296,18 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
             story.append(KeepTogether(block))
 
         story.append(Paragraph("Two results, one of which corrects this report's earlier draft", s["H3"]))
+        first = next(iter(sweep.values()))
+        ladder = {k.split("/")[0]: v["recall"] for k, v in first["armor"].items() if k.endswith("ml=on")}
+        ds_name = next(iter(sweep))
         story.append(Paragraph(
-            "<b>Confidence level behaves as documented but does not close the gap.</b> Recall rises "
-            "monotonically as the threshold loosens — on deepset 0.24 (HIGH) to 0.28 (MEDIUM) to 0.32 (LOW) "
-            "— with precision staying at 1.00 throughout. Even at its most sensitive setting Model Armor's "
-            "PI filter reaches 0.32 recall against jev-guard's 0.76 on the same cases. The gap is therefore "
-            "not a threshold artifact.", s["Body"]))
+            f"<b>Confidence level behaves as documented but does not close the gap.</b> Recall rises "
+            f"monotonically as the threshold loosens — on {ds_name} {ladder.get('high', float('nan')):.2f} "
+            f"(HIGH) to {ladder.get('medium', float('nan')):.2f} (MEDIUM) to "
+            f"{ladder.get('low', float('nan')):.2f} (LOW) — with precision staying at 1.00 throughout. Even "
+            f"at its most sensitive setting Model Armor's PI filter reaches "
+            f"{ladder.get('low', float('nan')):.2f} recall against jev-guard's "
+            f"{first['jev']['recall']:.2f} on the same cases. The gap is therefore not a threshold "
+            f"artifact.", s["Body"]))
         story.append(Paragraph(
             "<b>Multi-language detection had no measurable effect, contrary to this report's first draft.</b> "
             "Across 416 cases the flag changed exactly one verdict (deepset at MEDIUM, 0.23 vs 0.22 recall — "
@@ -313,6 +319,32 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
             "appear to affect prompt-injection detection.", s["Body"]))
 
     story.append(Paragraph("Per-dataset detail", s["H"]))
+
+    if armor_cfg:
+        story.append(Paragraph("Model Armor configuration used for every dataset below", s["H3"]))
+        rai = ", ".join(f"{t.replace('_', ' ').title()} {c.replace('_AND_ABOVE', '+')}" for t, c in armor_cfg["rai"])
+        pi = armor_cfg["pi_and_jailbreak"]
+        crows = [
+            ["Setting", "Value"],
+            ["Template", f"{armor_cfg['template']} ({armor_cfg['project']})"],
+            ["Prompt injection / jailbreak",
+             f"{pi.get('filterEnforcement', '—')}, {pi.get('confidenceLevel', '—')}"],
+            ["Responsible AI filters", rai or "—"],
+            ["Sensitive Data Protection", armor_cfg["sdp"]],
+            ["Malicious URI", armor_cfg["malicious_uri"]],
+            ["Multi-language detection", "enabled" if armor_cfg["multilang"] else "not enabled"],
+            ["Filter version", armor_cfg["filter_version"]],
+        ]
+        story.append(grid(crows, [1.9 * inch, 4.4 * inch], header=True))
+        story.append(Spacer(1, 5))
+        story.append(Paragraph(
+            "A case counts as flagged for Model Armor when any of these filters returns "
+            "<font face='Courier' size='8.5'>MATCH_FOUND</font>, not the prompt-injection filter alone — so "
+            "an SDP or Responsible AI match also counts as a detection in its favour. Note the filter "
+            "version is STABLE rather than LATEST, and multi-language detection is off; the permutation "
+            "sweep above varies both and finds the confidence level matters while multi-language does not.",
+            s["Small"]))
+        story.append(Spacer(1, 12))
     for name, r in results.items():
         block = [Paragraph(name, s["H3"]),
                  Paragraph(DATASET_NOTES.get(name, ""), s["Small"]), Spacer(1, 5)]
@@ -345,5 +377,7 @@ if __name__ == "__main__":
     dst = sys.argv[2] if len(sys.argv) > 2 else "jev-guard-evaluation.pdf"
     sweep_path = Path(sys.argv[3] if len(sys.argv) > 3 else "sweep.json")
     sweep = json.loads(sweep_path.read_text()) if sweep_path.exists() else None
-    build(json.loads(open(src).read()), dst, sweep)
+    cfg_path = Path("armor_config.json")
+    armor_cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else None
+    build(json.loads(open(src).read()), dst, sweep, armor_cfg)
     print(f"wrote {dst}")
