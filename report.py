@@ -295,7 +295,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
             block.append(Spacer(1, 10))
             story.append(KeepTogether(block))
 
-        story.append(Paragraph("Two results, one of which corrects this report's earlier draft", s["H3"]))
+        story.append(Paragraph("Two results", s["H3"]))
         first = next(iter(sweep.values()))
         ladder = {k.split("/")[0]: v["recall"] for k, v in first["armor"].items() if k.endswith("ml=on")}
         ds_name = next(iter(sweep))
@@ -309,14 +309,14 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
             f"{first['jev']['recall']:.2f} on the same cases. The gap is therefore not a threshold "
             f"artifact.", s["Body"]))
         story.append(Paragraph(
-            "<b>Multi-language detection had no measurable effect, contrary to this report's first draft.</b> "
-            "Across 416 cases the flag changed exactly one verdict (deepset at MEDIUM, 0.23 vs 0.22 recall — "
-            "a single case out of 60 attacks, which is noise). A direct spot check on three explicit German "
-            "override instructions gave identical results either way, and two of the three went undetected "
-            "even at LOW_AND_ABOVE with the flag enabled. The earlier claim that configuration explained the "
-            "German misses was wrong — on this evidence it is a capability gap in the PI filter. The flag "
-            "may well affect the RAI or SDP filters, which these isolated templates switch off; it does not "
-            "appear to affect prompt-injection detection.", s["Body"]))
+            "<b>Multi-language detection had no measurable effect.</b> Across 416 cases the flag changed "
+            "exactly one verdict (deepset at MEDIUM, 0.23 vs 0.22 recall — a single case out of 60 attacks, "
+            "which is noise). A direct spot check on three explicit German override instructions gave "
+            "identical results either way, and two of the three went undetected even at LOW_AND_ABOVE with "
+            "the flag enabled. The German misses are therefore a capability gap in the prompt-injection "
+            "filter rather than a configuration problem. The flag may well affect the RAI or SDP filters, "
+            "which these isolated templates switch off; it does not appear to affect prompt-injection "
+            "detection.", s["Body"]))
 
     story.append(Paragraph("Per-dataset detail", s["H"]))
 
