@@ -165,7 +165,8 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         # Recall-only datasets have no negatives, so an FPR does not exist for them.
         return "—" if v != v else f"{v:.2f}"
 
-    head = ["Dataset", "n", "jev F1", "armor F1", "jev R", "armor R", "jev FPR", "armor FPR", "Agree"]
+    head = ["Dataset", "n", "jev F1", "Model Armor F1", "jev R", "Model Armor R",
+            "jev FPR", "Model Armor FPR"]
     rows = [head]
     ordered = sorted(results.items(),
                      key=lambda kv: ({"direct": 0, "jailbreak": 1, "indirect": 2}.get(CATEGORY.get(kv[0], ""), 3),
@@ -182,11 +183,10 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
             f"{r['jev']['f1']:.2f}", f"{r['armor']['f1']:.2f}",
             f"{r['jev']['recall']:.2f}", f"{r['armor']['recall']:.2f}",
             pct(r["jev"]["fpr"]), pct(r["armor"]["fpr"]),
-            f"{r['agreement']:.0%}",
         ])
-    t = grid(rows, [0.92 * inch, 0.36 * inch, 0.58 * inch, 0.66 * inch, 0.54 * inch,
-                    0.62 * inch, 0.62 * inch, 0.72 * inch, 0.54 * inch],
-             align_right=(1, 2, 3, 4, 5, 6, 7, 8))
+    t = grid(rows, [0.95 * inch, 0.34 * inch, 0.56 * inch, 1.03 * inch, 0.5 * inch,
+                    0.98 * inch, 0.6 * inch, 1.08 * inch],
+             align_right=(1, 2, 3, 4, 5, 6, 7))
     extra = []
     for i, cat in band_rows.items():
         extra.append(("LINEABOVE", (0, i), (-1, i), 0.9, MUTED))
@@ -209,7 +209,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         a["n"] += r["n"]
         a["jtp"] += r["jev"]["tp"]; a["jfn"] += r["jev"]["fn"]; a["jfp"] += r["jev"]["fp"]; a["jtn"] += r["jev"]["tn"]
         a["atp"] += r["armor"]["tp"]; a["afn"] += r["armor"]["fn"]; a["afp"] += r["armor"]["fp"]; a["atn"] += r["armor"]["tn"]
-    crows = [["Attack class", "cases", "jev recall", "armor recall", "jev FPR", "armor FPR"]]
+    crows = [["Attack class", "cases", "jev recall", "Model Armor recall", "jev FPR", "Model Armor FPR"]]
     for cat in ("direct", "jailbreak", "indirect"):
         if cat not in agg:
             continue
@@ -220,7 +220,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         af = a["afp"] / (a["afp"] + a["atn"]) if a["afp"] + a["atn"] else float("nan")
         crows.append([cat, str(a["n"]), f"{jr:.2f}", f"{ar:.2f}", pct(jf), pct(af)])
     story += [Spacer(1, 12), Paragraph("Aggregate by attack class", s["H3"]), Spacer(1, 4),
-              grid(crows, [1.1 * inch, 0.6 * inch, 0.85 * inch, 0.95 * inch, 0.75 * inch, 0.85 * inch],
+              grid(crows, [1.05 * inch, 0.55 * inch, 0.82 * inch, 1.28 * inch, 0.7 * inch, 1.18 * inch],
                    align_right=(1, 2, 3, 4, 5))]
 
     # --- method --------------------------------------------------------------
