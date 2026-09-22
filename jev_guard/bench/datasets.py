@@ -55,6 +55,9 @@ def load_bipia(n: int | None = None, seed: int = 0) -> list[EvalCase]:
             side="input",
             label=row["label"],
             source="bipia",
+            # Model Armor takes flat text, so it gets the same content in the shape a
+            # real deployment would send rather than a Python dict repr.
+            armor_text=f"{row['user_intent']}\n\n{row['context']}",
         )
         for row in ds
     ]

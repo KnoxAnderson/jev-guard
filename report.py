@@ -39,6 +39,10 @@ DATASET_NOTES = {
     "slabs": "S-Labs/prompt-injection-dataset — independent direct-injection set",
     "password": "ivanleomk/prompt_injection_password — attempts to extract a withheld secret",
     "mixed": "jayavibhav/prompt-injection — large corpus, benign half is ordinary QA text",
+    "jailbreakhub": "walledai/JailbreakHub — real in-the-wild prompts from prompt-sharing communities",
+    "jbb": "JailbreakBench — 100 harmful and 100 deliberately matched benign",
+    "gandalf": "Lakera/gandalf_ignore_instructions — real extraction attempts, all positive (recall only)",
+    "bipia": "BIPIA-derived — INDIRECT injection embedded in retrieved content",
 }
 
 
@@ -245,6 +249,30 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         f"specifically. Where Model Armor remains complementary is in capabilities jev-guard does not have at "
         f"all — live URL reputation, DLP/SDP infoType matching, and multimodal screening — rather than as a "
         f"redundant vote on the same question.", s["Body"]))
+
+    if "bipia" in results:
+        b = results["bipia"]
+        story.append(Paragraph("Indirect injection is a different story", s["H"]))
+        story.append(Paragraph(
+            f"Every other dataset here is direct injection — the attack arrives in the user's own message. "
+            f"BIPIA is indirect: the malicious instruction is embedded in content the user merely asked the "
+            f"assistant to process. On {b['n']} cases jev-guard scores F1 {b['jev']['f1']:.2f} "
+            f"(recall {b['jev']['recall']:.2f}) against Model Armor's {b['armor']['f1']:.2f} "
+            f"(recall {b['armor']['recall']:.2f}). Model Armor caught "
+            f"{b['armor']['tp']} of {b['attacks']} indirect attacks.", s["Body"]))
+        story.append(Paragraph(
+            "That gap is large enough to need a confound check, because the two systems did not receive the "
+            "same input shape. Jev was given structured state separating <font face='Courier' size='8.5'>"
+            "external_content</font> from <font face='Courier' size='8.5'>user_request</font> — precisely "
+            "the provenance signal indirect detection turns on. Model Armor's sanitizeUserPrompt API accepts "
+            "a single text blob and cannot express that distinction at all. Re-running Jev on the same "
+            "flattened text drops it to F1 0.48 / recall 0.34, so roughly half the advantage is the input "
+            "shape rather than the model. The other half is real: on identical flat input Jev still scores "
+            "0.48 against 0.06.", s["Body"]))
+        story.append(Paragraph(
+            "The practical conclusion is architectural rather than about model quality. Detecting injected "
+            "instructions means knowing which span of text was trusted and which was retrieved, and an API "
+            "that takes one undifferentiated string forecloses that before any classifier runs.", s["Body"]))
 
     story.append(Paragraph("Shared blind spot", s["H"]))
     story.append(Paragraph(
