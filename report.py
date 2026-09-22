@@ -123,47 +123,25 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
     ]
 
     # --- summary -------------------------------------------------------------
+    def pct(v):
+        # Attack-only datasets have no negatives, so an FPR does not exist for them.
+        return "—" if v != v else f"{v:.2f}"
+
+    worst = min(results.items(), key=lambda kv: kv[1]["jev"]["f1"] - kv[1]["armor"]["f1"])
+    high_fpr = sorted(results.items(), key=lambda kv: -(kv[1]["jev"]["fpr"] if kv[1]["jev"]["fpr"] == kv[1]["jev"]["fpr"] else -1))[:2]
+
     story.append(Paragraph("Summary", s["H"]))
     story.append(Paragraph(
-        f"jev-guard scored a higher F1 on <b>{jev_wins} of {len(results)}</b> datasets and tied on {ties}, "
-        f"across {total_n} labeled cases spanning direct injection, jailbreak, and indirect injection. "
-        f"Performance differs sharply by attack class rather than uniformly, so the per-class aggregate "
-        f"below is the more useful summary than any single headline number.",
-        s["Body"]))
-    worst = min(results.items(), key=lambda kv: kv[1]["jev"]["f1"] - kv[1]["armor"]["f1"])
-    high_fpr = sorted(results.items(), key=lambda kv: -kv[1]["jev"]["fpr"])[:2]
+        f"Across {total_n} labeled cases from {len(results)} public datasets, jev-guard scored a higher F1 "
+        f"on <b>{jev_wins} of {len(results)}</b>. Results differ sharply by attack class, so the per-class "
+        f"aggregate below is the meaningful summary rather than any single figure.", s["Body"]))
     story.append(Paragraph(
-        f"<b>That headline hides the finding that matters most.</b> jev-guard's margin depends heavily on how "
-        f"realistic each dataset's benign half is. Where the negatives are ordinary question-answering text "
-        f"they are trivially separable and jev-guard dominates. Where they are drawn from real prompt-sharing "
-        f"traffic or deliberately matched to the attacks, its precision collapses: on "
+        f"The margin tracks how realistic each dataset's benign half is. Against ordinary question-answering "
+        f"negatives jev-guard dominates; against real prompt-sharing traffic its precision collapses — on "
         f"<b>{worst[0]}</b> Model Armor wins outright ({worst[1]['armor']['f1']:.2f} vs "
-        f"{worst[1]['jev']['f1']:.2f}), and jev-guard's worst false-positive rates are "
-        f"{high_fpr[0][0]} at {high_fpr[0][1]['jev']['fpr']:.2f} and {high_fpr[1][0]} at "
-        f"{high_fpr[1][1]['jev']['fpr']:.2f}, against Model Armor's "
-        f"{high_fpr[0][1]['armor']['fpr']:.2f} and {high_fpr[1][1]['armor']['fpr']:.2f}. A guard that flags a "
-        f"third of legitimate traffic is not deployable, whatever its recall.", s["Body"]))
-    story.append(Paragraph(
-        "Diagnosing those false positives found two definition errors rather than threshold problems. The "
-        "prompt-injection question asked whether a message contained instructions addressed to an AI — which "
-        "describes prompting itself, and flagged users setting a persona. Rewritten around provenance "
-        "(instructions arriving inside material the sender asked the assistant to process), its false "
-        "positives on jailbreakhub fell from 87 to 11. The harmful-request question did not distinguish "
-        "seeking capability from seeking understanding, and flagged questions about the history of bomb "
-        "technology and about regulatory loopholes. Both fixes are in the numbers reported here.", s["Body"]))
-    story.append(Paragraph(
-        "The residual jailbreakhub gap is partly a labelling disagreement rather than a detection failure: "
-        "much of its benign half consists of persona-override prompts (\u201cyou are now X, stay in character\u201d) "
-        "that many production guards would flag by design. It is reported as a loss regardless, because "
-        "picking the interpretation that flatters the system under test is how evaluations become "
-        "marketing.", s["Body"]))
-    story.append(Paragraph(
-        "Read the per-dataset numbers as directional rather than definitive, and note that the caveats below "
-        "materially favor jev-guard.", s["Body"]))
-
-    def pct(v):
-        # Recall-only datasets have no negatives, so an FPR does not exist for them.
-        return "—" if v != v else f"{v:.2f}"
+        f"{worst[1]['jev']['f1']:.2f}) and jev-guard's false-positive rate reaches "
+        f"{high_fpr[0][1]['jev']['fpr']:.2f}. A guard that flags a third of legitimate traffic is not "
+        f"deployable, whatever its recall.", s["Body"]))
 
     head = ["Dataset", "Type", "n", "jev F1", "Model Armor F1", "jev R", "Model Armor R",
             "jev FPR", "Model Armor FPR"]
@@ -224,6 +202,23 @@ def build(results: dict, out_path: str, sweep: dict | None = None, armor_cfg: di
                    align_right=(1, 2, 3, 4, 5))]
 
     # --- method --------------------------------------------------------------
+
+    story.append(Paragraph("Where the false positives come from", s["H"]))
+    story.append(Paragraph(
+        "Diagnosing the flagged benign cases found two definition errors rather than threshold problems. "
+        "The prompt-injection question asked whether a message contained instructions addressed to an AI — "
+        "which describes prompting itself, and flagged users setting a persona. Rewritten around provenance "
+        "(instructions arriving inside material the sender asked the assistant to process), its false "
+        "positives on jailbreakhub fell from 87 to 11. The harmful-request question did not distinguish "
+        "seeking capability from seeking understanding, and flagged questions about the history of bomb "
+        "technology and about regulatory loopholes. Both fixes are in the numbers reported here.", s["Body"]))
+    story.append(Paragraph(
+        "The residual jailbreakhub gap is partly a labelling disagreement rather than a detection failure: "
+        "much of its benign half consists of persona-override prompts (\u201cyou are now X, stay in "
+        "character\u201d) that many production guards would flag by design. It is reported as a loss "
+        "regardless, because picking the interpretation that flatters the system under test is how "
+        "evaluations become marketing.", s["Body"]))
+
     story.append(Paragraph("Method", s["H"]))
     story.append(Paragraph(
         "Both systems received identical inputs, 50 cases sampled per dataset with a fixed seed. A case counts "
