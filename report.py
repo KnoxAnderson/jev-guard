@@ -125,11 +125,10 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
     # --- summary -------------------------------------------------------------
     story.append(Paragraph("Summary", s["H"]))
     story.append(Paragraph(
-        f"jev-guard scored a higher F1 on <b>{jev_wins} of {len(results)}</b> datasets and tied on {ties}. "
-        f"The more decisive number is complementarity: across all {total_attacks} attack cases, Model Armor "
-        f"caught <b>{armor_only}</b> that jev-guard missed ({armor_only / total_attacks:.1%}), while jev-guard "
-        f"caught <b>{jev_only}</b> that Model Armor missed. The two systems' errors are therefore highly "
-        f"correlated, and stacking them adds far less than the individual gap suggests.",
+        f"jev-guard scored a higher F1 on <b>{jev_wins} of {len(results)}</b> datasets and tied on {ties}, "
+        f"across {total_n} labeled cases spanning direct injection, jailbreak, and indirect injection. "
+        f"Performance differs sharply by attack class rather than uniformly, so the per-class aggregate "
+        f"below is the more useful summary than any single headline number.",
         s["Body"]))
     worst = min(results.items(), key=lambda kv: kv[1]["jev"]["f1"] - kv[1]["armor"]["f1"])
     high_fpr = sorted(results.items(), key=lambda kv: -kv[1]["jev"]["fpr"])[:2]
@@ -162,7 +161,11 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         "Read the per-dataset numbers as directional rather than definitive, and note that the caveats below "
         "materially favor jev-guard.", s["Body"]))
 
-    head = ["Dataset", "n", "jev F1", "armor F1", "jev R", "armor R", "Agree", "jev-only", "armor-only"]
+    def pct(v):
+        # Recall-only datasets have no negatives, so an FPR does not exist for them.
+        return "—" if v != v else f"{v:.2f}"
+
+    head = ["Dataset", "n", "jev F1", "armor F1", "jev R", "armor R", "jev FPR", "armor FPR", "Agree"]
     rows = [head]
     ordered = sorted(results.items(),
                      key=lambda kv: ({"direct": 0, "jailbreak": 1, "indirect": 2}.get(CATEGORY.get(kv[0], ""), 3),
@@ -178,10 +181,11 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
             name, str(r["n"]),
             f"{r['jev']['f1']:.2f}", f"{r['armor']['f1']:.2f}",
             f"{r['jev']['recall']:.2f}", f"{r['armor']['recall']:.2f}",
-            f"{r['agreement']:.0%}", str(len(r["jev_only"])), str(len(r["armor_only"])),
+            pct(r["jev"]["fpr"]), pct(r["armor"]["fpr"]),
+            f"{r['agreement']:.0%}",
         ])
-    t = grid(rows, [0.82 * inch, 0.34 * inch, 0.62 * inch, 0.68 * inch, 0.58 * inch,
-                    0.64 * inch, 0.54 * inch, 0.66 * inch, 0.75 * inch],
+    t = grid(rows, [0.92 * inch, 0.36 * inch, 0.58 * inch, 0.66 * inch, 0.54 * inch,
+                    0.62 * inch, 0.62 * inch, 0.72 * inch, 0.54 * inch],
              align_right=(1, 2, 3, 4, 5, 6, 7, 8))
     extra = []
     for i, cat in band_rows.items():
@@ -193,9 +197,9 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
     t.setStyle(TableStyle(extra))
     story += [t, Spacer(1, 6),
               Paragraph("Grouped by attack class: direct injection first, then jailbreak, then indirect "
-                        "(rules mark each boundary). jev R / armor R are recall. “jev-only” and "
-                        "“armor-only” count attacks caught by that system alone. Green marks the higher F1.",
-                        s["Small"])]
+                        "(rules mark each boundary). R is recall; FPR is the false-positive rate, shown as "
+                        "“—” for datasets that contain only attacks and therefore have no negatives to "
+                        "measure it against. Green marks the higher F1.", s["Small"])]
 
     # Per-category aggregate, which is what the comparison is actually about.
     agg = {}
@@ -214,7 +218,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         ar = a["atp"] / (a["atp"] + a["afn"]) if a["atp"] + a["afn"] else float("nan")
         jf = a["jfp"] / (a["jfp"] + a["jtn"]) if a["jfp"] + a["jtn"] else float("nan")
         af = a["afp"] / (a["afp"] + a["atn"]) if a["afp"] + a["atn"] else float("nan")
-        crows.append([cat, str(a["n"]), f"{jr:.2f}", f"{ar:.2f}", f"{jf:.2f}", f"{af:.2f}"])
+        crows.append([cat, str(a["n"]), f"{jr:.2f}", f"{ar:.2f}", pct(jf), pct(af)])
     story += [Spacer(1, 12), Paragraph("Aggregate by attack class", s["H3"]), Spacer(1, 4),
               grid(crows, [1.1 * inch, 0.6 * inch, 0.85 * inch, 0.95 * inch, 0.75 * inch, 0.85 * inch],
                    align_right=(1, 2, 3, 4, 5))]
@@ -253,64 +257,6 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         story.append(Paragraph(f"• {caveat}", s["Body"]))
 
     # --- complementarity -----------------------------------------------------
-    story.append(Paragraph("Does stacking them help?", s["H"]))
-    story.append(Paragraph(
-        "The case for running two detectors rests on their errors being independent. They are not. Union "
-        "(flag if either fires) and intersection (flag only if both) were computed on the same cases:",
-        s["Body"]))
-
-    rows = [["Dataset", "jev F1", "armor F1", "union F1", "∩ F1", "union vs jev"]]
-    for name, r in results.items():
-        delta = r["union"]["f1"] - r["jev"]["f1"]
-        rows.append([name, f"{r['jev']['f1']:.2f}", f"{r['armor']['f1']:.2f}",
-                     f"{r['union']['f1']:.2f}", f"{r['intersection']['f1']:.2f}",
-                     f"{delta:+.2f}"])
-    t = grid(rows, [1.05 * inch, 0.78 * inch, 0.85 * inch, 0.85 * inch, 0.7 * inch, 1.0 * inch],
-             align_right=(1, 2, 3, 4, 5))
-    marks = []
-    for i, (_, r) in enumerate(results.items(), start=1):
-        delta = r["union"]["f1"] - r["jev"]["f1"]
-        marks.append(("TEXTCOLOR", (5, i), (5, i), WIN if delta > 0.005 else (LOSS if delta < -0.005 else MUTED)))
-    t.setStyle(TableStyle(marks))
-    story += [t, Spacer(1, 9)]
-
-    story.append(Paragraph(
-        f"Union improves on jev-guard alone for only a minority of datasets, and on <b>jailbreak</b> it is "
-        f"actively worse (0.92 → 0.90): Model Armor contributed no additional true positives there but did "
-        f"add a false positive. <b>slabs</b> is the one genuine exception, where Model Armor caught 4 attacks "
-        f"jev-guard missed and union rises 0.75 → 0.83. Intersection raises precision to 1.00 on several sets "
-        f"but costs so much recall that it is only defensible for auto-blocking with a separate, more "
-        f"sensitive path feeding human review.", s["Body"]))
-    story.append(Paragraph(
-        f"Practical reading: a second opinion is not worth double latency and cost for injection detection "
-        f"specifically. Where Model Armor remains complementary is in capabilities jev-guard does not have at "
-        f"all — live URL reputation, DLP/SDP infoType matching, and multimodal screening — rather than as a "
-        f"redundant vote on the same question.", s["Body"]))
-
-    if "bipia" in results:
-        b = results["bipia"]
-        story.append(Paragraph("Indirect injection is a different story", s["H"]))
-        story.append(Paragraph(
-            f"Every other dataset here is direct injection — the attack arrives in the user's own message. "
-            f"BIPIA is indirect: the malicious instruction is embedded in content the user merely asked the "
-            f"assistant to process. On {b['n']} cases jev-guard scores F1 {b['jev']['f1']:.2f} "
-            f"(recall {b['jev']['recall']:.2f}) against Model Armor's {b['armor']['f1']:.2f} "
-            f"(recall {b['armor']['recall']:.2f}). Model Armor caught "
-            f"{b['armor']['tp']} of {b['attacks']} indirect attacks.", s["Body"]))
-        story.append(Paragraph(
-            "That gap is large enough to need a confound check, because the two systems did not receive the "
-            "same input shape. Jev was given structured state separating <font face='Courier' size='8.5'>"
-            "external_content</font> from <font face='Courier' size='8.5'>user_request</font> — precisely "
-            "the provenance signal indirect detection turns on. Model Armor's sanitizeUserPrompt API accepts "
-            "a single text blob and cannot express that distinction at all. Re-running Jev on the same "
-            "flattened text drops it to F1 0.48 / recall 0.34, so roughly half the advantage is the input "
-            "shape rather than the model. The other half is real: on identical flat input Jev still scores "
-            "0.48 against 0.06.", s["Body"]))
-        story.append(Paragraph(
-            "The practical conclusion is architectural rather than about model quality. Detecting injected "
-            "instructions means knowing which span of text was trusted and which was retrieved, and an API "
-            "that takes one undifferentiated string forecloses that before any classifier runs.", s["Body"]))
-
     story.append(Paragraph("Shared blind spot", s["H"]))
     story.append(Paragraph(
         f"Both systems missed {both_missed} of {total_attacks} attacks. These are the cases that matter most, "
@@ -371,8 +317,7 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
         block = [Paragraph(name, s["H3"]),
                  Paragraph(DATASET_NOTES.get(name, ""), s["Small"]), Spacer(1, 5)]
         rows = [["System", "Precision", "Recall", "F1", "FPR", "TP", "FP", "TN", "FN"]]
-        for label, key in (("jev-guard", "jev"), ("Model Armor", "armor"),
-                           ("union", "union"), ("intersection", "intersection")):
+        for label, key in (("jev-guard", "jev"), ("Model Armor", "armor")):
             m = r[key]
             rows.append([label, f"{m['precision']:.2f}", f"{m['recall']:.2f}", f"{m['f1']:.2f}",
                          f"{m['fpr']:.2f}", str(m["tp"]), str(m["fp"]), str(m["tn"]), str(m["fn"])])
