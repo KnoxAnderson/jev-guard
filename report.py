@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from datetime import date
 
+from jev_guard.bench.datasets import CATEGORY
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import LETTER
@@ -162,7 +164,16 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
 
     head = ["Dataset", "n", "jev F1", "armor F1", "jev R", "armor R", "Agree", "jev-only", "armor-only"]
     rows = [head]
-    for name, r in results.items():
+    ordered = sorted(results.items(),
+                     key=lambda kv: ({"direct": 0, "jailbreak": 1, "indirect": 2}.get(CATEGORY.get(kv[0], ""), 3),
+                                     -kv[1]["jev"]["f1"]))
+    band_rows, current = {}, None
+    for i, (name, _) in enumerate(ordered, start=1):
+        cat = CATEGORY.get(name, "other")
+        if cat != current:
+            band_rows[i] = cat
+            current = cat
+    for name, r in ordered:
         rows.append([
             name, str(r["n"]),
             f"{r['jev']['f1']:.2f}", f"{r['armor']['f1']:.2f}",
@@ -173,14 +184,40 @@ def build(results: dict, out_path: str, sweep: dict | None = None) -> None:
                     0.64 * inch, 0.54 * inch, 0.66 * inch, 0.75 * inch],
              align_right=(1, 2, 3, 4, 5, 6, 7, 8))
     extra = []
-    for i, (_, r) in enumerate(results.items(), start=1):
+    for i, cat in band_rows.items():
+        extra.append(("LINEABOVE", (0, i), (-1, i), 0.9, MUTED))
+    for i, (_, r) in enumerate(ordered, start=1):
         better = WIN if r["jev"]["f1"] > r["armor"]["f1"] + 0.005 else INK
         extra.append(("TEXTCOLOR", (2, i), (2, i), better))
         extra.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
     t.setStyle(TableStyle(extra))
     story += [t, Spacer(1, 6),
-              Paragraph("jev R / armor R are recall. “jev-only” and “armor-only” count attacks caught by "
-                        "that system alone. Green marks the higher F1.", s["Small"])]
+              Paragraph("Grouped by attack class: direct injection first, then jailbreak, then indirect "
+                        "(rules mark each boundary). jev R / armor R are recall. “jev-only” and "
+                        "“armor-only” count attacks caught by that system alone. Green marks the higher F1.",
+                        s["Small"])]
+
+    # Per-category aggregate, which is what the comparison is actually about.
+    agg = {}
+    for name, r in results.items():
+        cat = CATEGORY.get(name, "other")
+        a = agg.setdefault(cat, {"n": 0, "jtp": 0, "jfn": 0, "atp": 0, "afn": 0, "jfp": 0, "afp": 0, "jtn": 0, "atn": 0})
+        a["n"] += r["n"]
+        a["jtp"] += r["jev"]["tp"]; a["jfn"] += r["jev"]["fn"]; a["jfp"] += r["jev"]["fp"]; a["jtn"] += r["jev"]["tn"]
+        a["atp"] += r["armor"]["tp"]; a["afn"] += r["armor"]["fn"]; a["afp"] += r["armor"]["fp"]; a["atn"] += r["armor"]["tn"]
+    crows = [["Attack class", "cases", "jev recall", "armor recall", "jev FPR", "armor FPR"]]
+    for cat in ("direct", "jailbreak", "indirect"):
+        if cat not in agg:
+            continue
+        a = agg[cat]
+        jr = a["jtp"] / (a["jtp"] + a["jfn"]) if a["jtp"] + a["jfn"] else float("nan")
+        ar = a["atp"] / (a["atp"] + a["afn"]) if a["atp"] + a["afn"] else float("nan")
+        jf = a["jfp"] / (a["jfp"] + a["jtn"]) if a["jfp"] + a["jtn"] else float("nan")
+        af = a["afp"] / (a["afp"] + a["atn"]) if a["afp"] + a["atn"] else float("nan")
+        crows.append([cat, str(a["n"]), f"{jr:.2f}", f"{ar:.2f}", f"{jf:.2f}", f"{af:.2f}"])
+    story += [Spacer(1, 12), Paragraph("Aggregate by attack class", s["H3"]), Spacer(1, 4),
+              grid(crows, [1.1 * inch, 0.6 * inch, 0.85 * inch, 0.95 * inch, 0.75 * inch, 0.85 * inch],
+                   align_right=(1, 2, 3, 4, 5))]
 
     # --- method --------------------------------------------------------------
     story.append(Paragraph("Method", s["H"]))

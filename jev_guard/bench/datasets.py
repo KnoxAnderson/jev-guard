@@ -196,6 +196,95 @@ def load_gandalf(n: int | None = None, seed: int = 0) -> list[EvalCase]:
         ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
     return [EvalCase(state=row["text"], side="input", label=1, source="gandalf") for row in ds]
 
+
+
+def load_neuralchemy(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """DIRECT. Binary injection set whose benign half is deliberately full of hard
+    negatives — legitimate text containing trigger words ("ignore the noise in this
+    signal", "override the default theme"). The sharpest precision probe available.
+    https://huggingface.co/datasets/neuralchemy/Prompt-injection-dataset (942 test)
+    """
+    from datasets import load_dataset
+
+    ds = load_dataset("neuralchemy/Prompt-injection-dataset", "core", split="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [EvalCase(state=r["text"], side="input", label=int(r["label"]), source="neuralchemy") for r in ds]
+
+
+def load_mosscap(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """DIRECT. Real injection attempts from Lakera's Mosscap game. All positive, so it
+    measures recall only.
+    https://huggingface.co/datasets/Lakera/mosscap_prompt_injection (27k test)
+    """
+    ds = _split("Lakera/mosscap_prompt_injection", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(state=r["prompt"], side="input", label=1, source="mosscap")
+        for r in ds
+        if r.get("prompt") and r["prompt"].strip()
+    ]
+
+
+def load_chatgpt_jb(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """JAILBREAK. The canonical shared ChatGPT jailbreak prompts (DAN and relatives) —
+    the single most-liked jailbreak dataset on the Hub. All positive.
+    https://huggingface.co/datasets/rubend18/ChatGPT-Jailbreak-Prompts (79 rows)
+    """
+    ds = _split("rubend18/ChatGPT-Jailbreak-Prompts", preferred="train")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(state=r["Prompt"], side="input", label=1, source="chatgpt_jb")
+        for r in ds
+        if r.get("Prompt") and r["Prompt"].strip()
+    ]
+
+
+def load_jailbreakv(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """JAILBREAK. JailBreakV-28K's text queries, spanning several attack formats
+    (template, persuade, logic). Multimodal upstream; only the text is used here since
+    Jev takes text. All positive.
+    https://huggingface.co/datasets/JailbreakV-28K/JailBreakV-28k (mini split, 280)
+    """
+    from datasets import load_dataset
+
+    ds = load_dataset("JailbreakV-28K/JailBreakV-28k", "JailBreakV_28K", split="mini_JailBreakV_28K")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    return [
+        EvalCase(state=r["jailbreak_query"], side="input", label=1, source="jailbreakv")
+        for r in ds
+        if r.get("jailbreak_query") and str(r["jailbreak_query"]).strip()
+    ]
+
+
+def load_boundary(n: int | None = None, seed: int = 0) -> list[EvalCase]:
+    """INDIRECT. Agentic injection as matched boundary pairs — each attack paired with a
+    near-identical benign counterpart, so precision and recall are measured on cases that
+    differ only by the thing that matters.
+    https://huggingface.co/datasets/3nesdeniz/agentic-prompt-injection-boundary-pairs (240 test)
+    """
+    ds = _split("3nesdeniz/agentic-prompt-injection-boundary-pairs", preferred="test")
+    if n is not None:
+        ds = ds.shuffle(seed=seed).select(range(min(n, len(ds))))
+    cases = []
+    for r in ds:
+        raw = r["label"]
+        label = int(raw) if str(raw).isdigit() else int(str(raw).strip().lower() in ("injection", "attack", "malicious", "true"))
+        cases.append(EvalCase(state=r["text"], side="input", label=label, source="boundary"))
+    return cases
+
+# Retired from the default suite, kept loadable for reproducing older runs:
+#   password — 155 downloads; superseded by gandalf and mosscap, which are real
+#              extraction attempts from live games rather than a synthetic set.
+#   mixed    — 646 downloads; superseded by neuralchemy, which probes the same axis
+#              with deliberate hard negatives instead of trivially separable QA text.
+#   slabs    — 742 downloads; undocumented labeling methodology and no coverage that
+#              deepset, safeguard and neuralchemy do not already provide.
+RETIRED = {"password", "mixed", "slabs"}
+
 LOADERS = {
     "deepset": load_deepset,
     "bipia": load_bipia,
@@ -207,5 +296,25 @@ LOADERS = {
     "mixed": load_mixed,
     "jailbreakhub": load_jailbreakhub,
     "jbb": load_jbb,
-    "gandalf": load_gandalf,
+    "gandalf": load_gandalf,    "neuralchemy": load_neuralchemy,
+    "mosscap": load_mosscap,
+    "chatgpt_jb": load_chatgpt_jb,
+    "jailbreakv": load_jailbreakv,
+    "boundary": load_boundary,
 }
+
+
+# Which attack class each dataset exercises. Direct = the attack is in the user's own
+# message; indirect = it is embedded in content the user asked the assistant to process;
+# jailbreak = an attempt to disable the assistant's rules rather than inject instructions.
+CATEGORY = {
+    "deepset": "direct", "safeguard": "direct", "slabs": "direct", "mixed": "direct",
+    "neuralchemy": "direct", "mosscap": "direct", "password": "direct", "spml": "direct",
+    "jailbreak": "jailbreak", "jbb": "jailbreak", "jailbreakhub": "jailbreak",
+    "chatgpt_jb": "jailbreak", "jailbreakv": "jailbreak", "gandalf": "jailbreak",
+    "bipia": "indirect", "boundary": "indirect",
+}
+
+
+# The default suite: every dataset in CATEGORY that has not been retired.
+SUITE = [name for name in CATEGORY if name not in RETIRED]
